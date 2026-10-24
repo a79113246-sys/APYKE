@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Проснувшийся: замок, кровь и безумие</title>
+<style>
+:root{--bg:#150c1b;--ink:#f1e6d0;--mut:#b9a7c4;--red:#c0304a;--gold:#e8c35a;--vio:#7d5bbd;color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#150c1b}}
+:root[data-theme="dark"]{--bg:#150c1b}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:Georgia,"Times New Roman",serif}
+body{display:grid;place-items:center;overflow:hidden}
+#w{position:relative;width:min(100vw,calc(100vh*1.538));aspect-ratio:800/520;background:#000;box-shadow:0 0 0 2px var(--vio)}
+canvas{display:block;width:100%;height:100%}
+#hud{position:absolute;left:8px;top:8px;width:34%;display:grid;gap:4px}
+.r{display:flex;align-items:center;gap:6px;font-size:clamp(10px,1.9vw,15px)}
+.t{flex:1;height:clamp(7px,1.4vw,12px);background:#0009;border:2px solid #000;border-radius:6px;overflow:hidden}
+.t i{display:block;height:100%;width:50%}
+#info,#inv,#help{position:absolute;font-size:clamp(10px,1.9vw,15px);text-shadow:0 1px 2px #000}
+#info{right:8px;top:8px;text-align:right}
+#inv{left:8px;bottom:8px;line-height:1.5}
+#help{right:8px;bottom:8px;text-align:right;font-size:clamp(9px,1.4vw,12px);color:var(--mut);max-width:48%}
+#toast{position:absolute;top:18%;left:50%;transform:translateX(-50%);background:#000b;border:2px solid var(--gold);padding:6px 14px;border-radius:10px;opacity:0;transition:opacity .3s;text-align:center;font-size:clamp(11px,2vw,16px);pointer-events:none;max-width:80%}
+.ov{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:#0c0710e6;text-align:center;padding:16px}
+.ov[hidden]{display:none}
+.ov h1{margin:0;font-size:clamp(20px,4.4vw,36px);color:var(--gold)}
+.ov p{margin:0;max-width:34em;font-size:clamp(11px,2vw,16px);line-height:1.45}
+button{font:inherit;background:var(--red);color:#fff;border:2px solid #000;border-radius:10px;padding:8px 18px;cursor:pointer;font-size:clamp(12px,2.2vw,18px)}
+button:focus-visible{outline:3px solid var(--gold)}
+#opts{display:flex;gap:10px}
+#rq{font-size:clamp(22px,5vw,40px);color:var(--gold)}
+</style>
+</head>
+<body>
+<div id="w">
+<canvas id="c" width="800" height="520"></canvas>
+<div id="hud">
+<div class="r">❤<div class="t"><i id="bh" style="background:#c0304a"></i></div></div>
+<div class="r">🩸<div class="t"><i id="bb" style="background:#8a1630"></i></div></div>
+<div class="r">🌀<div class="t"><i id="bm" style="background:#7d5bbd"></i></div></div>
+</div>
+<div id="info"></div>
+<div id="inv"></div>
+<div id="help">WASD — ходить · Пробел — укус · E — добыть<br>B — плита замка · Shift — рывок · F — сгусток</div>
+<div id="toast"></div>
+<div class="ov" id="rune" hidden>
+<h1>Руна крови</h1>
+<p>Реши пример, чтобы забрать силу священной крови.</p>
+<div id="rq"></div>
+<div id="opts"></div>
+</div>
+<div class="ov" id="ov">
+<h1 id="ot">Проснувшийся</h1>
+<p id="op">Ты — вампир, который только что проснулся. Днём солнце жжёт, ночью приходит безумие, а кровь заканчивается. Добывай дерево и камень, строй плиты замка (внутри безопасно), кусай жителей, лови золотых носителей священной крови и победи четырёх Рыцарей Рассвета — по одному в каждом сезоне.</p>
+<button id="go">Начать</button>
+</div>
+</div>
+<script>
+const $=id=>document.getElementById(id),C=$('c'),X=C.getContext('2d');
+const W=800,H=520,WW=2000,WH=1400,DAY=50,TS=50;
+const R=(a,b)=>a+Math.random()*(b-a),RI=(a,b)=>Math.floor(R(a,b+1)),cl=(v,a,b)=>Math.max(a,Math.min(b,v)),dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+const SE=[{n:'Осень',g:'#4b3626',c:'#c9772e',dr:1,su:1},{n:'Зима',g:'#3d4859',c:'#9db3c8',dr:1.7,su:.8},{n:'Весна',g:'#35523c',c:'#6fae6b',dr:1,su:1},{n:'Лето',g:'#5a6534',c:'#b3c23f',dr:1,su:1.7}];
+const keys={};let S,last=0,run=false,rune=null,tt;
+function pt(){let x,y;do{x=R(60,WW-60);y=R(60,WH-60)}while(Math.hypot(x-1000,y-700)<110);return{x,y}}
+function mkVil(h){S.vil.push({...pt(),hp:3,h,vx:0,vy:0,wt:0,s:R(0,9)})}
+function init(){
+ S={t:0,p:{x:1000,y:700,hp:100,bl:80,md:0,wd:3,st:0,dash:0,bolt:0,veil:0,fx:0,fy:1,ac:0,dc:0,bc:0,db:0},trees:[],rocks:[],vil:[],mon:[],bo:[],bz:[],tiles:[],fl:[],bk:0,sp:{},sun:0,ms:0,sl:0,di:0,ph:0,day:true,se:0,SS:SE[0]};
+ for(let i=0;i<46;i++)S.trees.push({...pt(),n:3,rg:0,s:R(0,9)});
+ for(let i=0;i<24;i++)S.rocks.push({...pt(),n:3,rg:0,s:R(0,9)});
+ for(let i=0;i<7;i++)mkVil(false);
+}
+function toast(t){const e=$('toast');e.textContent=t;e.style.opacity=1;clearTimeout(tt);tt=setTimeout(()=>e.style.opacity=0,3400)}
+function ft(x,y,txt,c){S.fl.push({x,y,txt,c,t:1})}
+function end(win){
+ run=false;
+ $('ot').textContent=win?'Ты пережил год!':'Ты погиб';
+ $('op').textContent=win?'Все четыре Рыцаря Рассвета повержены. Плит в замке: '+S.tiles.length+'. Тьма теперь твоя.':'Дожил до дня '+(S.di+1)+', плит в замке: '+S.tiles.length+'. Совет: строй плиты замка (B) — внутри нет ни солнца, ни безумия.';
+ $('go').textContent='Играть снова';$('ov').hidden=false;
+}
+function upd(dt){
+ const p=S.p;S.t+=dt;
+ const di=Math.floor(S.t/DAY),ph=(S.t%DAY)/DAY,day=ph<.6,se=Math.floor(di/2),SS=SE[se%4];
+ Object.assign(S,{di,ph,day,se,SS});
+ if(di%2==0&&ph<.1&&se<4&&!S.sp['b'+se]){S.sp['b'+se]=1;const a=R(0,6.28);S.bo.push({x:cl(p.x+Math.cos(a)*330,30,WW-30),y:cl(p.y+Math.sin(a)*330,30,WH-30),hp:10+4*se,m:10+4*se,cd:0,s:R(0,9)});toast('Начался сезон «'+SS.n+'». Пришёл Рыцарь Рассвета!')}
+ if(ph>.12&&ph<.3&&!S.sp['h'+di]){S.sp['h'+di]=1;if(!S.vil.some(v=>v.h)){mkVil(true);toast('✨ Появился носитель священной крови — ищи золотое свечение')}}
+ const k=keys;
+ let dx=(k.d||k.arrowright?1:0)-(k.a||k.arrowleft?1:0),dy=(k.s||k.arrowdown?1:0)-(k.w||k.arrowup?1:0);
+ const l=Math.hypot(dx,dy);if(l){dx/=l;dy/=l;p.fx=dx;p.fy=dy}
+ p.dc-=dt;p.bc-=dt;p.ac-=dt;p.db-=dt;S.sl-=dt;
+ let sp=130;if(p.db>0){dx=p.fx;dy=p.fy;sp=480}
+ p.x=cl(p.x+dx*sp*dt,20,WW-20);p.y=cl(p.y+dy*sp*dt,20,WH-20);
+ const inC=S.tiles.some(t=>Math.abs(p.x-(t.x+25))<27&&Math.abs(p.y-(t.y+25))<27);
+ const sh=S.trees.some(t=>t.n>0&&dist(t,p)<38);
+ let sd=0;
+ if(day&&!inC){sd=6*SS.su*(sh?.3:1)*(p.veil?.5:1);p.hp-=sd*dt}
+ S.sun+=((sd>0?1:0)-S.sun)*Math.min(1,dt*4);
+ p.bl-=.9*SS.dr*dt;if(p.bl<=0){p.bl=0;p.hp-=3*dt}
+ if(!day&&!inC)p.md+=3.5*dt;else p.md-=(inC?5:2)*dt;
+ p.md=cl(p.md,0,100);if(p.md>=100)p.hp-=4*dt;
+ if(p.bl>50&&sd==0&&p.hp<100)p.hp=Math.min(100,p.hp+1.5*dt);
+ for(const a of [S.trees,S.rocks])for(const t of a)if(t.n==0){t.rg-=dt;if(t.rg<=0)t.n=3}
+ for(const v of S.vil){
+  v.wt-=dt;
+  if(dist(v,p)<130){const a=Math.atan2(v.y-p.y,v.x-p.x);v.vx=Math.cos(a)*88;v.vy=Math.sin(a)*88}
+  else if(v.wt<=0){const a=R(0,6.28),s=Math.random()<.4?0:35;v.vx=Math.cos(a)*s;v.vy=Math.sin(a)*s;v.wt=R(1,3)}
+  v.x=cl(v.x+v.vx*dt,20,WW-20);v.y=cl(v.y+v.vy*dt,20,WH-20);
+ }
+ while(S.vil.filter(v=>!v.h).length<7)mkVil(false);
+ if(day)S.mon=[];
+ else if(p.md>55&&S.mon.length<5&&(S.ms-=dt)<=0){S.ms=3;const a=R(0,6.28);S.mon.push({x:cl(p.x+Math.cos(a)*300,20,WW-20),y:cl(p.y+Math.sin(a)*300,20,WH-20),hp:2,s:R(0,9)})}
+ for(const m of S.mon){const a=Math.atan2(p.y-m.y,p.x-m.x);m.x+=Math.cos(a)*75*dt;m.y+=Math.sin(a)*75*dt;if(dist(m,p)<22){p.hp-=12*dt;p.md=Math.min(100,p.md+8*dt)}}
+ for(const b of S.bo){const a=Math.atan2(p.y-b.y,p.x-b.x);b.x+=Math.cos(a)*85*dt;b.y+=Math.sin(a)*85*dt;b.cd-=dt;if(dist(b,p)<36&&b.cd<=0){b.cd=1;p.hp-=22;ft(p.x,p.y-30,'-22','#ff6a6a')}}
+ for(const z of S.bz){z.x+=z.vx*dt;z.y+=z.vy*dt;z.t-=dt;
+  for(const e of [...S.mon,...S.bo])if(z.t>0&&dist(e,z)<24){z.t=0;hit(e,2)}}
+ S.bz=S.bz.filter(z=>z.t>0);
+ for(const f of S.fl){f.t-=dt;f.y-=22*dt}
+ S.fl=S.fl.filter(f=>f.t>0);
+ if(p.hp<=0)end(false);
+}
+function hit(e,d){
+ const p=S.p;e.hp-=d;ft(e.x,e.y-24,'-'+d,'#fff');
+ if(e.hp>0)return;
+ if(S.vil.includes(e)){S.vil=S.vil.filter(v=>v!==e);p.bl=Math.min(100,p.bl+35);p.md=Math.max(0,p.md-10);ft(e.x,e.y-30,'+35 крови','#ff5a73');if(e.h)openRune()}
+ else if(S.mon.includes(e)){S.mon=S.mon.filter(m=>m!==e);p.md=Math.max(0,p.md-6)}
+ else{S.bo=S.bo.filter(b=>b!==e);S.bk++;p.hp=Math.min(100,p.hp+40);p.bl=Math.min(100,p.bl+40);toast('Рыцарь Рассвета повержен! '+S.bk+' из 4');if(S.bk>=4)end(true)}
+}
+function bite(){
+ const p=S.p;if(p.ac>0)return;p.ac=.35;S.sl=.14;let best=null,bd=54;
+ for(const a of [S.vil,S.mon,S.bo])for(const e of a)if(dist(e,p)<bd){bd=dist(e,p);best=e}
+ if(best)hit(best,1);
+}
+function gather(){
+ const p=S.p;let best=null,bd=56,kind;
+ for(const t of S.trees)if(t.n>0&&dist(t,p)<bd){bd=dist(t,p);best=t;kind='wd'}
+ for(const t of S.rocks)if(t.n>0&&dist(t,p)<bd){bd=dist(t,p);best=t;kind='st'}
+ if(!best){toast('Рядом нет дерева или камня');return}
+ best.n--;p[kind]++;if(best.n==0)best.rg=kind=='wd'?22:30;
+ ft(best.x,best.y-20,kind=='wd'?'+1 дерево':'+1 камень','#e8c35a');
+}
+function build(){
+ const p=S.p,gx=Math.floor(p.x/TS)*TS,gy=Math.floor(p.y/TS)*TS;
+ if(S.tiles.some(t=>t.x==gx&&t.y==gy)){toast('Здесь уже стоит плита замка');return}
+ if(p.wd<2||p.st<2){toast('Плита стоит 2 дерева + 2 камня. У тебя: дерево '+p.wd+', камень '+p.st);return}
+ p.wd-=2;p.st-=2;S.tiles.push({x:gx,y:gy});ft(p.x,p.y-30,'Плита замка!','#b69cff');
+}
+function cast(){
+ const p=S.p;if(!p.bolt||p.bc>0)return;
+ if(p.bl<10){toast('Не хватает крови для сгустка');return}
+ p.bl-=10;p.bc=.6;S.bz.push({x:p.x,y:p.y,vx:p.fx*380,vy:p.fy*380,t:.75});
+}
+function openRune(){nq()}
+function nq(){
+ const p=S.p,n=p.dash+p.bolt+p.veil;let a,b,q,ans;
+ if(n<2){const m=9+n*8;a=RI(3,m);b=RI(3,m);q=a+' + '+b;ans=a+b}
+ else{a=RI(2,6);b=RI(2,6);q=a+' × '+b;ans=a*b}
+ const o=[ans];while(o.length<3){const w=ans+RI(-4,4);if(w>0&&!o.includes(w))o.push(w)}
+ o.sort(()=>Math.random()-.5);rune={ans};
+ $('rq').textContent=q+' = ?';
+ $('opts').innerHTML=o.map((v,i)=>'<button data-v="'+v+'">'+(i+1)+') '+v+'</button>').join('');
+ $('rune').hidden=false;
+}
+function answer(v){
+ const p=S.p;
+ if(v==rune.ans){
+  $('rune').hidden=true;rune=null;
+  if(!p.dash){p.dash=1;toast('Новая способность: РЫВОК (Shift)')}
+  else if(!p.bolt){p.bolt=1;toast('Новая способность: КРОВАВЫЙ СГУСТОК (F)')}
+  else if(!p.veil){p.veil=1;toast('Новая способность: ТЕНЕВАЯ ВУАЛЬ — солнце жжёт вдвое слабее')}
+  else{p.hp=100;p.bl=100;toast('Сердце священной крови: здоровье и кровь полные!')}
+ }else{p.bl=Math.max(0,p.bl-10);toast('Руна погасла… −10 крови. Попробуй ещё раз');nq()}
+}
+$('opts').addEventListener('click',e=>{const b=e.target.closest('button');if(b)answer(+b.dataset.v)});
+addEventListener('keydown',e=>{
+ const k=e.code.replace('Key','').toLowerCase();
+ if(['space','arrowup','arrowdown','arrowleft','arrowright'].includes(k))e.preventDefault();
+ if(rune){const i=['digit1','digit2','digit3'].indexOf(k);if(i>=0){const b=$('opts').children[i];if(b)answer(+b.dataset.v)}return}
+ keys[k]=true;if(!run||e.repeat)return;
+ if(k=='space')bite();else if(k=='e')gather();else if(k=='b')build();else if(k=='f')cast();
+ else if(k=='shiftleft'||k=='shiftright'){const p=S.p;if(p.dash&&p.dc<=0){p.db=.14;p.dc=2}}
+});
+addEventListener('keyup',e=>{keys[e.code.replace('Key','').toLowerCase()]=false});
+$('go').onclick=()=>{init();run=true;$('ov').hidden=true;$('go').blur()};
+function blob(x,y,r,s,f,ry=r,n=11){
+ X.beginPath();
+ for(let i=0;i<=n;i++){const a=i/n*6.283,k=1+.13*Math.sin(s*5+i*2.7),px=x+Math.cos(a)*r*k,py=y+Math.sin(a)*ry*k;i?X.lineTo(px,py):X.moveTo(px,py)}
+ X.closePath();X.fillStyle=f;X.fill();X.stroke();
+}
+function dk(ph){if(ph<.55)return 0;if(ph<.65)return(ph-.55)/.1*.7;if(ph<.93)return .7;return(1-ph)/.07*.7}
+function draw(){
+ if(!S)return;
+ const p=S.p,SS=S.SS,cx=cl(p.x-W/2,0,WW-W),cy=cl(p.y-H/2,0,WH-H),t=S.t;
+ X.save();X.fillStyle=SS.g;X.fillRect(0,0,W,H);X.translate(-cx,-cy);
+ X.lineWidth=2.5;X.lineJoin=X.lineCap='round';X.strokeStyle='#140b18';
+ X.save();X.lineWidth=1.5;X.strokeStyle=S.se%4==1?'#ffffff66':'#00000040';
+ for(let i=Math.floor(cx/70);i<=(cx+W)/70;i++)for(let j=Math.floor(cy/70);j<=(cy+H)/70;j++){
+  const h=((i*73856093)^(j*19349663))>>>0,x=i*70+h%60,y=j*70+(h>>8)%60;
+  X.beginPath();X.moveTo(x-5,y);X.lineTo(x-2,y-6);X.moveTo(x,y);X.lineTo(x,y-8);X.moveTo(x+5,y);X.lineTo(x+2,y-6);X.stroke();
+ }
+ X.restore();
+ X.strokeStyle='#000';X.lineWidth=6;X.strokeRect(0,0,WW,WH);X.strokeStyle='#140b18';X.lineWidth=2.5;
+ for(const q of S.tiles){
+  X.fillStyle='#3a2a4a';X.fillRect(q.x,q.y,TS,TS);X.strokeRect(q.x,q.y,TS,TS);
+  X.save();X.lineWidth=1.2;X.beginPath();X.moveTo(q.x,q.y+17);X.lineTo(q.x+TS,q.y+17);X.moveTo(q.x,q.y+34);X.lineTo(q.x+TS,q.y+34);X.moveTo(q.x+25,q.y);X.lineTo(q.x+25,q.y+17);X.moveTo(q.x+12,q.y+17);X.lineTo(q.x+12,q.y+34);X.moveTo(q.x+38,q.y+17);X.lineTo(q.x+38,q.y+34);X.stroke();X.restore();
+  X.fillStyle='#8a63c9';X.beginPath();X.moveTo(q.x+20,q.y+48);X.lineTo(q.x+20,q.y+38);X.quadraticCurveTo(q.x+25,q.y+30,q.x+30,q.y+38);X.lineTo(q.x+30,q.y+48);X.closePath();X.fill();X.stroke();
+ }
+ if(S.day)for(const a of S.trees)if(a.n>0){X.fillStyle='rgba(0,0,0,.22)';X.beginPath();X.ellipse(a.x,a.y+8,38,22,0,0,6.3);X.fill()}
+ for(const a of S.rocks){if(a.n>0){blob(a.x,a.y,16,a.s,'#7f7a86',12);X.save();X.lineWidth=1.5;X.beginPath();X.moveTo(a.x-6,a.y-3);X.lineTo(a.x+2,a.y-7);X.stroke();X.restore()}else blob(a.x,a.y+4,6,a.s,'#5d5964',4)}
+ for(const v of S.vil){
+  if(v.h){X.fillStyle='rgba(255,220,90,'+(.3+.15*Math.sin(t*5))+')';X.beginPath();X.arc(v.x,v.y,26,0,6.3);X.fill()}
+  blob(v.x,v.y,10,v.s,v.h?'#f6e08a':'#d8b890',13);
+  X.fillStyle=v.h?'#fff3b0':'#e9cfa8';X.beginPath();X.arc(v.x,v.y-14,6,0,6.3);X.fill();X.stroke();
+  if(v.h){X.strokeStyle='#e8c35a';X.beginPath();X.ellipse(v.x,v.y-24,7,2.5,0,0,6.3);X.stroke();X.strokeStyle='#140b18'}
+  else{X.fillStyle='#5a3a22';X.beginPath();X.moveTo(v.x-8,v.y-17);X.lineTo(v.x,v.y-28);X.lineTo(v.x+8,v.y-17);X.closePath();X.fill();X.stroke()}
+ }
+ for(const m of S.mon){
+  blob(m.x,m.y,12,m.s+t,'#1a1022',14);X.fillStyle='#fff';X.beginPath();X.arc(m.x-4,m.y-3,2.5,0,6.3);X.arc(m.x+4,m.y-3,2.5,0,6.3);X.fill();
+ }
+ for(const b of S.bo){
+  X.save();X.strokeStyle='#e8c35a';X.lineWidth=2;X.beginPath();X.arc(b.x,b.y-4,42,0,6.3);for(let i=0;i<8;i++){const a=i*.785+t;X.moveTo(b.x+Math.cos(a)*42,b.y-4+Math.sin(a)*42);X.lineTo(b.x+Math.cos(a)*54,b.y-4+Math.sin(a)*54)}X.stroke();X.restore();
+  blob(b.x,b.y,28,b.s,'#9a97a6',32);X.fillStyle='#e8c35a';X.fillRect(b.x-18,b.y-8,36,7);X.strokeRect(b.x-18,b.y-8,36,7);
+  X.fillStyle='#000';X.fillRect(b.x-30,b.y-48,60,7);X.fillStyle='#e8c35a';X.fillRect(b.x-29,b.y-47,58*b.hp/b.m,5);
+ }
+ const mv=keys.w||keys.a||keys.s||keys.d,by=mv?Math.sin(t*14)*1.5:0;
+ if(S.sl>0){X.strokeStyle='#fff';X.lineWidth=3;X.beginPath();X.arc(p.x,p.y,34,Math.atan2(p.fy,p.fx)-.8,Math.atan2(p.fy,p.fx)+.8);X.stroke();X.strokeStyle='#140b18';X.lineWidth=2.5}
+ blob(p.x,p.y+by,13,2,'#3b2250',18);
+ X.fillStyle='#e9dcc8';X.beginPath();X.arc(p.x,p.y-15+by,8,0,6.3);X.fill();X.stroke();
+ X.fillStyle='#d11f3d';X.beginPath();X.arc(p.x-3,p.y-16+by,1.8,0,6.3);X.arc(p.x+3,p.y-16+by,1.8,0,6.3);X.fill();
+ X.fillStyle='#fff';X.beginPath();X.moveTo(p.x-2,p.y-11+by);X.lineTo(p.x-1,p.y-7+by);X.lineTo(p.x,p.y-11+by);X.moveTo(p.x+2,p.y-11+by);X.lineTo(p.x+1,p.y-7+by);X.lineTo(p.x,p.y-11+by);X.fill();
+ for(const a of S.trees){
+  if(a.n>0){X.fillStyle='#5a3a22';X.fillRect(a.x-4,a.y-6,8,22);X.strokeRect(a.x-4,a.y-6,8,22);blob(a.x,a.y-18,22,a.s,SS.c,24)}
+  else blob(a.x,a.y+10,7,a.s,'#5a3a22',4);
+ }
+ for(const z of S.bz){X.fillStyle='#c0304a';X.beginPath();X.arc(z.x,z.y,7,0,6.3);X.fill();X.stroke()}
+ X.font='bold 13px Georgia';X.textAlign='center';
+ for(const f of S.fl){X.globalAlpha=Math.min(1,f.t*2);X.fillStyle=f.c;X.strokeStyle='#000';X.lineWidth=3;X.strokeText(f.txt,f.x,f.y);X.fillText(f.txt,f.x,f.y)}
+ X.globalAlpha=1;X.restore();
+ const a=dk(S.ph),sx=p.x-cx,sy=p.y-cy;
+ if(a>0){const g=X.createRadialGradient(sx,sy,40,sx,sy,200);g.addColorStop(0,'rgba(8,5,30,'+a*.2+')');g.addColorStop(1,'rgba(8,5,30,'+a+')');X.fillStyle=g;X.fillRect(0,0,W,H)}
+ if(S.sun>.02){const g=X.createRadialGradient(W/2,H/2,H*.3,W/2,H/2,W*.65);g.addColorStop(0,'rgba(255,120,30,0)');g.addColorStop(1,'rgba(255,120,30,'+S.sun*.55+')');X.fillStyle=g;X.fillRect(0,0,W,H)}
+ if(p.md>60){X.fillStyle='rgba(125,91,189,'+(p.md-60)/160+')';X.fillRect(0,0,W,H)}
+}
+function hud(){
+ if(!S)return;const p=S.p;
+ $('bh').style.width=cl(p.hp,0,100)+'%';$('bb').style.width=p.bl+'%';$('bm').style.width=p.md+'%';
+ $('info').innerHTML='День '+(S.di+1)+' · '+S.SS.n+' · '+(S.day?'☀ день':'🌙 ночь')+'<br>Рыцарей повержено: '+S.bk+' из 4';
+ $('inv').innerHTML='🪵 '+p.wd+' &nbsp; 🪨 '+p.st+' &nbsp; 🏰 '+S.tiles.length+'<br>'+(p.dash?'⚡ рывок ':'')+(p.bolt?'🔴 сгусток ':'')+(p.veil?'🕶 вуаль':'');
+}
+function loop(ts){
+ const dt=Math.min(.05,(ts-last)/1000||0);last=ts;
+ if(run&&!rune)upd(dt);
+ draw();hud();requestAnimationFrame(loop);
+}
+init();requestAnimationFrame(loop);
+</script>
+</body>
+</html>
